@@ -5,20 +5,29 @@ const { createClient } = supabase;
 const supa = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 // ---------------- USER AUTH ----------------
-const token = localStorage.getItem("authToken");
+const urlParams = new URLSearchParams(window.location.search);
+let token = urlParams.get("token");
+
+// If no token in URL, try localStorage
 if (!token) {
-  alert("Please login first!");
-  window.location.href = "/login";
+  token = localStorage.getItem("civicAuthToken");
 }
 
+// If still no token, redirect to Civic login (Netlify-hosted)
+if (!token) {
+  alert("Please login first!");
+  window.location.href = "https://68beaa706776a8837dbbef63--guileless-sable-ea93eb.netlify.app/login";
+} else {
+  // Save token in localStorage for later use
+  localStorage.setItem("civicAuthToken", token);
+}
+
+// Decode token
 const decoded = jwt_decode(token);
 const userEmail = decoded.email;
 console.log("Logged in as:", userEmail);
 
 const isAdmin = userEmail.includes("admin.civic");
-
-// Track admin view mode
-let showAllReports = false;
 
 // ---------------- MAP SETUP ----------------
 const map = L.map('mapContainer').setView([28.6139, 77.2090], 12);
@@ -29,7 +38,6 @@ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
 const markers = L.layerGroup().addTo(map);
 const heat = L.heatLayer([], { radius: 25, blur: 15 }).addTo(map);
 
-// SLA (Service Level Agreement) days
 const SLA_DAYS = 7;
 
 // ---------------- LOAD REPORTS ----------------
@@ -41,8 +49,6 @@ async function loadReports() {
   try {
     let query = supa.from('reports').select('*').order('reported_on', { ascending: false }).limit(2000);
 
-    // For normal user → only their reports
-    // For admin → conditionally show all or only their reports
     if (!isAdmin || !showAllReports) {
       query = query.eq('user_email', userEmail);
     }
