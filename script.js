@@ -4,31 +4,6 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBh
 const { createClient } = supabase;
 const supa = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-// ---------------- USER AUTH ----------------
-const urlParams = new URLSearchParams(window.location.search);
-let token = urlParams.get("token");
-
-// If no token in URL, try localStorage
-if (!token) {
-  token = localStorage.getItem("civicAuthToken");
-}
-
-// If still no token, redirect to Civic login (Netlify-hosted)
-if (!token) {
-  alert("Please login first!");
-  window.location.href = "https://68beaa706776a8837dbbef63--guileless-sable-ea93eb.netlify.app/login";
-} else {
-  // Save token in localStorage for later use
-  localStorage.setItem("civicAuthToken", token);
-}
-
-// Decode token
-const decoded = jwt_decode(token);
-const userEmail = decoded.email;
-console.log("Logged in as:", userEmail);
-
-const isAdmin = userEmail.includes("admin.civic");
-
 // ---------------- MAP SETUP ----------------
 const map = L.map('mapContainer').setView([28.6139, 77.2090], 12);
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
@@ -39,6 +14,8 @@ const markers = L.layerGroup().addTo(map);
 const heat = L.heatLayer([], { radius: 25, blur: 15 }).addTo(map);
 
 const SLA_DAYS = 7;
+let showAllReports = true; // always show all since no auth
+const isAdmin = true;      // admin mode by default
 
 // ---------------- LOAD REPORTS ----------------
 async function loadReports() {
@@ -47,13 +24,12 @@ async function loadReports() {
   tableBody.innerHTML = "";
 
   try {
-    let query = supa.from('reports').select('*').order('reported_on', { ascending: false }).limit(2000);
+    let { data, error } = await supa
+      .from('reports')
+      .select('*')
+      .order('reported_on', { ascending: false })
+      .limit(2000);
 
-    if (!isAdmin || !showAllReports) {
-      query = query.eq('user_email', userEmail);
-    }
-
-    const { data, error } = await query;
     if (error) throw error;
 
     const points = [];
@@ -85,7 +61,7 @@ async function loadReports() {
             <td>${r.ward || ""}</td>
             <td>${reportedDate.toLocaleString()}</td>
             <td>${daysRemaining}</td>
-            ${isAdmin ? `<td>${r.user_email || ""}</td>` : ""}
+            <td>${r.user_email || ""}</td>
           </tr>
         `;
         tableBody.innerHTML += row;
@@ -113,7 +89,7 @@ document.getElementById('submitBtn').addEventListener('click', async () => {
     ward: document.getElementById('ward').value,
     lat: parseFloat(document.getElementById('lat').value),
     lon: parseFloat(document.getElementById('lon').value),
-    user_email: userEmail
+    user_email: document.getElementById('user_email').value || "anonymous"
   };
 
   if (!payload.lat || !payload.lon) { 
@@ -123,7 +99,7 @@ document.getElementById('submitBtn').addEventListener('click', async () => {
 
   const { error } = await supa.from('reports').insert([payload]);
   if (error) { 
-    alert('Insert failed: ' + error.message); 
+    alert('Insert failed: ' + error.message);
     return; 
   }
 
@@ -133,16 +109,6 @@ document.getElementById('submitBtn').addEventListener('click', async () => {
 
 // ---------------- RELOAD BUTTON ----------------
 document.getElementById('reloadBtn').addEventListener('click', loadReports);
-
-// ---------------- ADMIN TOGGLE ----------------
-if (isAdmin) {
-  document.getElementById('adminControls').style.display = "block";
-  document.getElementById('toggleViewBtn').addEventListener('click', () => {
-    showAllReports = !showAllReports;
-    document.getElementById('toggleViewBtn').innerText = showAllReports ? "Show My Reports" : "Show All Reports";
-    loadReports();
-  });
-}
 
 // ---------------- SEARCH ----------------
 async function goToLocation() {
